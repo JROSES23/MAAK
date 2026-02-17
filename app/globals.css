@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-1: #1d2957;
+  --bg-2: #2a1f49;
+  --surface: rgba(255, 255, 255, 0.12);
+  --surface-border: rgba(255, 255, 255, 0.24);
+  --text-primary: #f8fbff;
+  --text-muted: rgba(235, 244, 255, 0.72);
+  --accent: #7ea4ff;
+  --accent-2: #9f86ff;
+}
+
+[data-mode='dark'] {
+  --bg-1: #0b0f1a;
+  --bg-2: #0f172a;
+  --surface: rgba(17, 24, 39, 0.95);
+  --surface-border: rgba(255, 255, 255, 0.06);
+  --text-primary: #f4f7ff;
+  --text-muted: rgba(199, 212, 235, 0.72);
+}
+
+body {
+  color: var(--text-primary);
+  background: linear-gradient(165deg, var(--bg-1), var(--bg-2));
+  min-height: 100vh;
+}
+
+.squircle {
+  border-radius: 30px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgba(4, 10, 26, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(16px);
+}
+
+.dark .squircle {
+  backdrop-filter: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
