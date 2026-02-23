@@ -9,7 +9,7 @@ const items = [
   { href: '/app/focus', label: 'Focus' },
   { href: '/app/flashcards', label: 'Cards' },
   { href: '/app/notes', label: 'Notas' }
-];
+] as const;
 
 export function BottomNav() {
   const pathname = usePathname();
