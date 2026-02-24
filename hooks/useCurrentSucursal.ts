@@ -1,21 +1,16 @@
 'use client';
-
 import { useEffect, useState } from 'react';
 
-const CURRENT_SUCURSAL_KEY = 'gestionpyme_current_sucursal';
-
+const KEY = 'maak_current_sucursal';
 export function useCurrentSucursal() {
-  const [sucursalId, setSucursalId] = useState<string>('');
-
+  const [sucursalId, setId] = useState('');
   useEffect(() => {
-    const stored = window.localStorage.getItem(CURRENT_SUCURSAL_KEY);
-    if (stored) setSucursalId(stored);
+    const saved = window.localStorage.getItem(KEY);
+    if (saved) setId(saved);
   }, []);
-
-  const updateSucursal = (nextSucursalId: string) => {
-    setSucursalId(nextSucursalId);
-    window.localStorage.setItem(CURRENT_SUCURSAL_KEY, nextSucursalId);
+  const setSucursalId = (id: string) => {
+    setId(id);
+    window.localStorage.setItem(KEY, id);
   };
-
-  return { sucursalId, setSucursalId: updateSucursal };
+  return { sucursalId, setSucursalId };
 }

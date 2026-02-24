@@ -1,10 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-export const metadata: Metadata = {
-  title: 'GestiónPYME',
-  description: 'PWA para gestión de sucursales, pedidos, remuneraciones y gastos personales.'
-};
+export const metadata: Metadata = { title: 'MAAK', description: 'Gestión real con Supabase para pymes.' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
