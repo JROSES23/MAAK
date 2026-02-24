@@ -1,52 +1,34 @@
 'use client';
-
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase/client';
+import { createSupabaseClient } from '@/lib/supabase/client';
 
-export type UpcomingEvent = { id: string; message: string };
+export type UpcomingEvent = { id: string; titulo: string; fecha: string };
 
-export function useUpcomingEvents(daysAhead = 7) {
+export function useUpcomingEvents(sucursalId: string, userId: string) {
+  const supabase = createSupabaseClient();
   const [events, setEvents] = useState<UpcomingEvent[]>([]);
 
   useEffect(() => {
+    if (!sucursalId || !userId) return;
     const load = async () => {
       const now = new Date();
-      const until = new Date();
-      until.setDate(now.getDate() + daysAhead);
-
-      const [pedidos, quincenas] = await Promise.all([
-        supabase
-          .from('pedidos')
-          .select('id,fecha_pedido,proveedor_id')
-          .gte('fecha_pedido', now.toISOString())
-          .lte('fecha_pedido', until.toISOString())
-          .limit(10),
-        supabase
-          .from('remuneraciones')
-          .select('id,fecha_pago')
-          .eq('es_quincena', true)
-          .gte('fecha_pago', now.toISOString())
-          .lte('fecha_pago', until.toISOString())
-          .limit(10)
+      const week = new Date(); week.setDate(now.getDate() + 7);
+      const [pedidos, rems, gastos] = await Promise.all([
+        supabase.from('pedidos').select('id,fecha_pedido').eq('sucursal_id', sucursalId).gte('fecha_pedido', now.toISOString()).lte('fecha_pedido', week.toISOString()).limit(3),
+        supabase.from('remuneraciones').select('id,fecha_pago').eq('es_quincena', true).gte('fecha_pago', now.toISOString()).lte('fecha_pago', week.toISOString()).limit(3),
+        supabase.from('gastos_personales').select('id,fecha,descripcion').eq('user_id', userId).gte('fecha', now.toISOString()).lte('fecha', week.toISOString()).limit(3)
       ]);
 
-      const reminders: UpcomingEvent[] = [
-        ...(pedidos.data ?? []).map((item) => ({
-          id: `pedido-${item.id}`,
-          message: `Pedido proveedor ${item.proveedor_id} programado para ${new Date(item.fecha_pedido).toLocaleDateString('es-CL')}`
-        })),
-        ...(quincenas.data ?? []).map((item) => ({
-          id: `quincena-${item.id}`,
-          message: `Pago de quincena el ${new Date(item.fecha_pago).toLocaleDateString('es-CL')}`
-        })),
-        { id: 'personal-mock', message: 'Recordatorio: revisar gastos personales recurrentes de fin de mes.' }
-      ];
+      const merged: UpcomingEvent[] = [
+        ...(pedidos.data ?? []).map((p) => ({ id: `p-${p.id}`, titulo: 'Pedido próximo', fecha: p.fecha_pedido })),
+        ...(rems.data ?? []).map((r) => ({ id: `r-${r.id}`, titulo: 'Pago quincena', fecha: r.fecha_pago })),
+        ...(gastos.data ?? []).map((g) => ({ id: `g-${g.id}`, titulo: g.descripcion || 'Gasto personal', fecha: g.fecha }))
+      ].sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime()).slice(0, 5);
 
-      setEvents(reminders);
+      setEvents(merged);
     };
-
     void load();
-  }, [daysAhead]);
+  }, [sucursalId, userId, supabase]);
 
   return events;
 }

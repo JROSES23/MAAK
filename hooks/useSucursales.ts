@@ -1,34 +1,28 @@
 'use client';
-
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase/client';
-
-export type Sucursal = { id: string; nombre: string };
+import { useCallback, useEffect, useState } from 'react';
+import { createSupabaseClient } from '@/lib/supabase/client';
+import type { Sucursal } from '@/lib/types';
 
 export function useSucursales() {
-  const [data, setData] = useState<Sucursal[]>([]);
+  const supabase = createSupabaseClient();
+  const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchSucursales = async () => {
-      setLoading(true);
-      const { data: rows, error: queryError } = await supabase
-        .from('sucursales')
-        .select('id,nombre')
-        .order('nombre')
-        .limit(20);
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('sucursales').select('*').order('created_at');
+    if (error) setError(error.message);
+    setSucursales((data as Sucursal[]) ?? []);
+    setLoading(false);
+  }, [supabase]);
 
-      if (queryError) {
-        setError(queryError.message);
-      } else {
-        setData(rows ?? []);
-      }
-      setLoading(false);
-    };
+  const createSucursal = async (nombre: string, direccion: string) => {
+    const { error } = await supabase.from('sucursales').insert({ nombre, direccion });
+    if (error) throw error;
+    await refetch();
+  };
 
-    void fetchSucursales();
-  }, []);
-
-  return { data, loading, error };
+  useEffect(() => { void refetch(); }, [refetch]);
+  return { sucursales, loading, error, refetch, createSucursal };
 }
