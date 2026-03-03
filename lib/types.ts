@@ -8,6 +8,8 @@ export interface Sucursal {
   nombre: string;
   direccion: string;
   telefono: string;
+  color?: string;
+  created_at?: string;
 }
 
 export interface Proveedor {
@@ -95,7 +97,9 @@ export interface Asistencia {
   trabajador_id: string;
   fecha: string;
   presente: boolean;
+  horas_trabajadas?: number;
   notas: string;
+  created_at?: string;
 }
 
 export interface PreferenciaTrabajador {

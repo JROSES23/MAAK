@@ -125,6 +125,14 @@ body {
   outline-offset: 2px;
 }
 
+/* Eliminar controles de resize en toda la UI */
+textarea {
+  resize: none;
+}
+*[style*="resize"] {
+  resize: none !important;
+}
+
 /* Recharts tooltip custom styling */
 .recharts-tooltip-wrapper .recharts-default-tooltip {
   background-color: var(--color-surface) !important;

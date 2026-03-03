@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   ShoppingCart,
   Plus,
@@ -13,7 +13,6 @@ import {
   DollarSign,
   Award,
   Edit2,
-  Save,
 } from "lucide-react";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { StatCard } from "@/components/ui/StatCard";
@@ -21,17 +20,25 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { DataTable } from "@/components/ui/DataTable";
+import { NuevoPedidoModal } from "@/components/pedidos/NuevoPedidoModal";
 import {
-  pedidosMock,
-  proveedores,
-  productos,
-  sucursales,
-} from "@/lib/mock-data";
+  PedidosFiltros,
+  EMPTY_FILTERS,
+  type PedidosFilters,
+} from "@/components/pedidos/PedidosFiltros";
+import type { FormItem } from "@/components/pedidos/ItemRow";
+import { useBranchesStore } from "@/store/useBranchesStore";
+import { usePedidos } from "@/hooks/usePedidos";
+import { useProveedores } from "@/hooks/useProveedores";
+import { useProductos } from "@/hooks/useProductos";
 import { formatCLP, formatDate } from "@/lib/utils";
 import { exportPedidoToExcel, generateWhatsAppText } from "@/lib/excel-export";
-import type { Pedido, EstadoPedido } from "@/lib/types";
+import type { Pedido, EstadoPedido, Proveedor } from "@/lib/types";
 
-const estadoBadge: Record<EstadoPedido, "info" | "warning" | "success" | "danger" | "accent"> = {
+const estadoBadge: Record<
+  EstadoPedido,
+  "info" | "warning" | "success" | "danger" | "accent"
+> = {
   borrador: "warning",
   pendiente: "accent",
   enviado: "info",
@@ -47,214 +54,196 @@ const ESTADO_LABELS: Record<EstadoPedido, string> = {
   cancelado: "Cancelado",
 };
 
-const ALL_ESTADOS: EstadoPedido[] = ["borrador", "pendiente", "enviado", "recibido", "cancelado"];
+const ALL_ESTADOS: EstadoPedido[] = [
+  "borrador",
+  "pendiente",
+  "enviado",
+  "recibido",
+  "cancelado",
+];
 const EDITABLE_STATES: EstadoPedido[] = ["borrador", "pendiente"];
 
 function isEditable(estado: EstadoPedido): boolean {
   return EDITABLE_STATES.includes(estado);
 }
 
-interface FormItem {
-  producto_id: string;
-  cantidad: number;
-  unidad: string;
-  precio_estimado: number;
-  sucursal_id: string;
-}
-
-interface FormData {
-  proveedor_id: string;
-  sucursal_id: string;
-  fecha: string;
-  notas: string;
-  estado: EstadoPedido;
-  items: FormItem[];
-}
-
-function getEmptyForm(): FormData {
-  return {
-    proveedor_id: proveedores[0].id,
-    sucursal_id: sucursales[0].id,
-    fecha: new Date().toISOString().split("T")[0],
-    notas: "",
-    estado: "borrador",
-    items: [
-      {
-        producto_id: productos[0].id,
-        cantidad: 1,
-        unidad: productos[0].unidad_default,
-        precio_estimado: 0,
-        sucursal_id: sucursales[0].id,
-      },
-    ],
-  };
-}
-
-function pedidoToForm(pedido: Pedido): FormData {
-  return {
-    proveedor_id: pedido.proveedor_id,
-    sucursal_id: pedido.sucursal_id,
-    fecha: pedido.fecha,
-    notas: pedido.notas,
-    estado: pedido.estado,
-    items: pedido.items.map((item) => ({
-      producto_id: item.producto_id,
-      cantidad: item.cantidad,
-      unidad: item.unidad,
-      precio_estimado: item.precio_estimado,
-      sucursal_id: item.sucursal_id,
-    })),
-  };
-}
-
 export default function PedidosPage() {
-  const [pedidos, setPedidos] = useState<Pedido[]>(pedidosMock);
+  const branches = useBranchesStore((s) => s.branches);
+  const {
+    pedidos,
+    loading: loadingPedidos,
+    fetchPedidos,
+    createPedido,
+    updatePedido,
+    changeEstado,
+    deletePedido,
+  } = usePedidos();
+  const {
+    proveedores,
+    fetchProveedores,
+    createProveedor,
+  } = useProveedores();
+  const { productos, fetchProductos, createProducto } = useProductos();
+
+  const [showModal, setShowModal] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [editingPedido, setEditingPedido] = useState<Pedido | null>(null);
   const [selectedPedido, setSelectedPedido] = useState<Pedido | null>(null);
   const [showWhatsApp, setShowWhatsApp] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [filters, setFilters] = useState<PedidosFilters>(EMPTY_FILTERS);
 
-  // Modal state
-  const [showModal, setShowModal] = useState(false);
-  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
-  const [editingPedidoId, setEditingPedidoId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<FormData>(getEmptyForm());
+  // Load data on mount
+  useEffect(() => {
+    fetchPedidos();
+    fetchProveedores();
+    fetchProductos();
+  }, [fetchPedidos, fetchProveedores, fetchProductos]);
+
+  // Apply client-side filters
+  const filteredPedidos = useMemo(() => {
+    return pedidos.filter((p) => {
+      if (
+        filters.proveedor_id &&
+        p.proveedor_id !== filters.proveedor_id
+      )
+        return false;
+      if (filters.sucursal_id && p.sucursal_id !== filters.sucursal_id)
+        return false;
+      if (filters.estado && p.estado !== filters.estado) return false;
+      if (filters.fecha_desde && p.fecha < filters.fecha_desde) return false;
+      if (filters.fecha_hasta && p.fecha > filters.fecha_hasta) return false;
+      if (filters.monto_min && p.total_estimado < parseInt(filters.monto_min))
+        return false;
+      if (filters.monto_max && p.total_estimado > parseInt(filters.monto_max))
+        return false;
+      if (filters.search) {
+        const s = filters.search.toLowerCase();
+        const matchNotas = p.notas?.toLowerCase().includes(s);
+        const matchProv = p.proveedor?.nombre?.toLowerCase().includes(s);
+        if (!matchNotas && !matchProv) return false;
+      }
+      return true;
+    });
+  }, [pedidos, filters]);
 
   // Stats
-  const totalPedidos = pedidos.length;
-  const montoEstimadoMes = pedidos.reduce((sum, p) => sum + p.total_estimado, 0);
+  const totalPedidos = filteredPedidos.length;
+  const montoEstimadoMes = filteredPedidos.reduce(
+    (sum, p) => sum + p.total_estimado,
+    0
+  );
   const topProveedor = useMemo(() => {
     const byProv: Record<string, number> = {};
-    pedidos.forEach((p) => {
+    filteredPedidos.forEach((p) => {
       const name = p.proveedor?.nombre || "Desconocido";
       byProv[name] = (byProv[name] || 0) + p.total_estimado;
     });
     const sorted = Object.entries(byProv).sort((a, b) => b[1] - a[1]);
     return sorted[0] ? sorted[0][0] : "\u2014";
-  }, [pedidos]);
+  }, [filteredPedidos]);
 
-  const formTotal = formData.items.reduce((s, i) => s + i.cantidad * i.precio_estimado, 0);
-
-  // Open create modal
   const openCreate = () => {
     setModalMode("create");
-    setEditingPedidoId(null);
-    setFormData(getEmptyForm());
+    setEditingPedido(null);
     setShowModal(true);
   };
 
-  // Open edit modal
   const openEdit = (pedido: Pedido) => {
     setModalMode("edit");
-    setEditingPedidoId(pedido.id);
-    setFormData(pedidoToForm(pedido));
+    setEditingPedido(pedido);
     setShowModal(true);
   };
 
-  // Add item to form
-  const handleAddItem = () => {
-    setFormData({
-      ...formData,
-      items: [
-        ...formData.items,
-        {
-          producto_id: productos[0].id,
-          cantidad: 1,
-          unidad: productos[0].unidad_default,
-          precio_estimado: 0,
-          sucursal_id: sucursales[0].id,
-        },
-      ],
-    });
+  const handleSave = useCallback(
+    async (data: {
+      proveedor_id: string;
+      sucursal_id: string;
+      fecha: string;
+      notas: string;
+      estado: EstadoPedido;
+      total_estimado: number;
+      items: FormItem[];
+    }) => {
+      // Ensure all products exist
+      const processedItems = [];
+      for (const item of data.items) {
+        let productoId = item.producto_id;
+        if (!productoId && item.producto_nombre) {
+          const created = await createProducto({
+            nombre: item.producto_nombre,
+            unidad_default: item.unidad || "un",
+            categoria: "General",
+          });
+          if (created) productoId = created.id;
+        }
+        if (productoId) {
+          processedItems.push({
+            producto_id: productoId,
+            cantidad: item.cantidad,
+            unidad: item.unidad,
+            precio_estimado: item.precio_estimado,
+            sucursal_id: item.sucursal_id,
+          });
+        }
+      }
+
+      if (modalMode === "create") {
+        await createPedido(
+          {
+            fecha: data.fecha,
+            proveedor_id: data.proveedor_id,
+            sucursal_id: data.sucursal_id,
+            estado: "borrador",
+            notas: data.notas,
+            total_estimado: data.total_estimado,
+          },
+          processedItems
+        );
+      } else if (editingPedido) {
+        await updatePedido(
+          editingPedido.id,
+          {
+            fecha: data.fecha,
+            proveedor_id: data.proveedor_id,
+            sucursal_id: data.sucursal_id,
+            estado: data.estado,
+            notas: data.notas,
+            total_estimado: data.total_estimado,
+          },
+          processedItems
+        );
+      }
+
+      setShowModal(false);
+      fetchPedidos();
+    },
+    [
+      modalMode,
+      editingPedido,
+      createPedido,
+      updatePedido,
+      createProducto,
+      fetchPedidos,
+    ]
+  );
+
+  const handleCreateProveedor = useCallback(
+    async (prov: Omit<Proveedor, "id" | "created_at">) => {
+      return await createProveedor(prov);
+    },
+    [createProveedor]
+  );
+
+  const handleStatusChange = async (
+    pedidoId: string,
+    newEstado: EstadoPedido
+  ) => {
+    await changeEstado(pedidoId, newEstado);
   };
 
-  // Remove item from form
-  const handleRemoveItem = (index: number) => {
-    setFormData({
-      ...formData,
-      items: formData.items.filter((_, i) => i !== index),
-    });
-  };
-
-  // Update form item
-  const updateItem = (index: number, updates: Partial<FormItem>) => {
-    const items = [...formData.items];
-    items[index] = { ...items[index], ...updates };
-    setFormData({ ...formData, items });
-  };
-
-  // Save (create or edit)
-  const handleSave = () => {
-    const prov = proveedores.find((p) => p.id === formData.proveedor_id);
-    const suc = sucursales.find((s) => s.id === formData.sucursal_id);
-
-    if (modalMode === "create") {
-      const newId = `ped${Date.now()}`;
-      const newP: Pedido = {
-        id: newId,
-        fecha: formData.fecha,
-        proveedor_id: formData.proveedor_id,
-        proveedor: prov,
-        sucursal_id: formData.sucursal_id,
-        sucursal: suc,
-        estado: "borrador",
-        notas: formData.notas,
-        total_estimado: formTotal,
-        items: formData.items.map((item, idx) => ({
-          id: `pi${Date.now()}_${idx}`,
-          pedido_id: newId,
-          producto_id: item.producto_id,
-          producto: productos.find((p) => p.id === item.producto_id),
-          cantidad: item.cantidad,
-          unidad: item.unidad,
-          precio_estimado: item.precio_estimado,
-          sucursal_id: item.sucursal_id,
-          sucursal: sucursales.find((s) => s.id === item.sucursal_id),
-        })),
-      };
-      setPedidos([newP, ...pedidos]);
-    } else if (editingPedidoId) {
-      const pedidoId = editingPedidoId;
-      setPedidos(
-        pedidos.map((p) => {
-          if (p.id !== pedidoId) return p;
-          return {
-            ...p,
-            fecha: formData.fecha,
-            proveedor_id: formData.proveedor_id,
-            proveedor: prov,
-            sucursal_id: formData.sucursal_id,
-            sucursal: suc,
-            estado: formData.estado,
-            notas: formData.notas,
-            total_estimado: formTotal,
-            items: formData.items.map((item, idx) => ({
-              id: `pi${Date.now()}_${idx}`,
-              pedido_id: pedidoId,
-              producto_id: item.producto_id,
-              producto: productos.find((pr) => pr.id === item.producto_id),
-              cantidad: item.cantidad,
-              unidad: item.unidad,
-              precio_estimado: item.precio_estimado,
-              sucursal_id: item.sucursal_id,
-              sucursal: sucursales.find((s) => s.id === item.sucursal_id),
-            })),
-          };
-        })
-      );
-    }
-    setShowModal(false);
-  };
-
-  // Inline status change
-  const handleStatusChange = (pedidoId: string, newEstado: EstadoPedido) => {
-    setPedidos(
-      pedidos.map((p) => (p.id === pedidoId ? { ...p, estado: newEstado } : p))
-    );
-  };
-
-  // Delete pedido
-  const handleDeletePedido = (id: string) => {
-    setPedidos(pedidos.filter((p) => p.id !== id));
+  const handleDeletePedido = async (id: string) => {
+    await deletePedido(id);
   };
 
   const handleCopyWhatsApp = () => {
@@ -283,13 +272,13 @@ export default function PedidosPage() {
         <StatCard
           label="Total pedidos"
           value={totalPedidos.toString()}
-          sublabel="Este mes"
+          sublabel="Filtrados"
           icon={Package}
         />
         <StatCard
           label="Monto estimado"
           value={formatCLP(montoEstimadoMes)}
-          sublabel="Marzo 2026"
+          sublabel="Total filtrado"
           icon={DollarSign}
         />
         <StatCard
@@ -299,6 +288,14 @@ export default function PedidosPage() {
           icon={Award}
         />
       </div>
+
+      {/* Filtros avanzados */}
+      <PedidosFiltros
+        filters={filters}
+        onChange={setFilters}
+        proveedores={proveedores}
+        sucursales={branches}
+      />
 
       {/* Tabla de pedidos */}
       <DataTable
@@ -335,7 +332,7 @@ export default function PedidosPage() {
             header: "Items",
             render: (p: Pedido) => (
               <span className="text-sm text-[var(--color-muted)]">
-                {p.items.length} productos
+                {p.items?.length || 0} productos
               </span>
             ),
           },
@@ -357,7 +354,10 @@ export default function PedidosPage() {
                   value={p.estado}
                   onChange={(e) => {
                     e.stopPropagation();
-                    handleStatusChange(p.id, e.target.value as EstadoPedido);
+                    handleStatusChange(
+                      p.id,
+                      e.target.value as EstadoPedido
+                    );
                   }}
                   onClick={(e) => e.stopPropagation()}
                   className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs font-medium text-[var(--color-text)] focus:outline-none"
@@ -428,235 +428,26 @@ export default function PedidosPage() {
             ),
           },
         ]}
-        data={pedidos}
+        data={filteredPedidos}
         keyExtractor={(p) => p.id}
         onRowClick={(p) => setSelectedPedido(p)}
+        emptyMessage={
+          loadingPedidos ? "Cargando pedidos..." : "No hay pedidos"
+        }
       />
 
       {/* Modal: Create / Edit pedido */}
-      <Modal
+      <NuevoPedidoModal
         open={showModal}
         onClose={() => setShowModal(false)}
-        title={modalMode === "create" ? "Nuevo pedido" : "Editar pedido"}
-        size="xl"
-      >
-        <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            {/* Proveedor */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--color-text-secondary)]">
-                Proveedor
-              </label>
-              <select
-                value={formData.proveedor_id}
-                onChange={(e) =>
-                  setFormData({ ...formData, proveedor_id: e.target.value })
-                }
-                className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
-              >
-                {proveedores.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Sucursal */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--color-text-secondary)]">
-                Sucursal destino
-              </label>
-              <select
-                value={formData.sucursal_id}
-                onChange={(e) =>
-                  setFormData({ ...formData, sucursal_id: e.target.value })
-                }
-                className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
-              >
-                {sucursales.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Fecha */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--color-text-secondary)]">
-                Fecha
-              </label>
-              <input
-                type="date"
-                value={formData.fecha}
-                onChange={(e) =>
-                  setFormData({ ...formData, fecha: e.target.value })
-                }
-                className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
-              />
-            </div>
-
-            {/* Estado (solo en edicion) */}
-            {modalMode === "edit" && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-[var(--color-text-secondary)]">
-                  Estado
-                </label>
-                <select
-                  value={formData.estado}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      estado: e.target.value as EstadoPedido,
-                    })
-                  }
-                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-accent)] focus:outline-none"
-                >
-                  {ALL_ESTADOS.map((est) => (
-                    <option key={est} value={est}>
-                      {ESTADO_LABELS[est]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-
-          {/* Items */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-[var(--color-text-secondary)]">
-                Productos
-              </label>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={Plus}
-                onClick={handleAddItem}
-              >
-                Agregar item
-              </Button>
-            </div>
-
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {formData.items.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-2 rounded-xl bg-[var(--color-surface-alt)] p-3"
-                >
-                  <select
-                    value={item.producto_id}
-                    onChange={(e) => {
-                      const prod = productos.find(
-                        (p) => p.id === e.target.value
-                      );
-                      updateItem(idx, {
-                        producto_id: e.target.value,
-                        unidad: prod?.unidad_default || item.unidad,
-                      });
-                    }}
-                    className="flex-1 min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-[var(--color-text)] focus:outline-none"
-                  >
-                    {productos.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.nombre}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    value={item.cantidad}
-                    onChange={(e) =>
-                      updateItem(idx, {
-                        cantidad: parseInt(e.target.value) || 0,
-                      })
-                    }
-                    placeholder="Cant."
-                    className="w-16 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-[var(--color-text)] focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={item.unidad}
-                    onChange={(e) =>
-                      updateItem(idx, { unidad: e.target.value })
-                    }
-                    className="w-16 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-[var(--color-text)] focus:outline-none"
-                  />
-                  <input
-                    type="number"
-                    value={item.precio_estimado}
-                    onChange={(e) =>
-                      updateItem(idx, {
-                        precio_estimado: parseInt(e.target.value) || 0,
-                      })
-                    }
-                    placeholder="Precio"
-                    className="w-24 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-[var(--color-text)] focus:outline-none"
-                  />
-                  <select
-                    value={item.sucursal_id}
-                    onChange={(e) =>
-                      updateItem(idx, { sucursal_id: e.target.value })
-                    }
-                    className="w-32 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs text-[var(--color-text)] focus:outline-none"
-                  >
-                    {sucursales.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.nombre}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => handleRemoveItem(idx)}
-                    className="rounded-lg p-1 text-[var(--color-muted)] hover:text-red-400"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Notas */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--color-text-secondary)]">
-              Notas
-            </label>
-            <textarea
-              value={formData.notas}
-              onChange={(e) =>
-                setFormData({ ...formData, notas: e.target.value })
-              }
-              rows={2}
-              className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-accent)] focus:outline-none resize-none"
-              placeholder="Notas adicionales del pedido..."
-            />
-          </div>
-
-          {/* Total */}
-          <div className="flex items-center justify-between border-t border-[var(--color-border)] pt-4">
-            <span className="text-sm font-medium text-[var(--color-text-secondary)]">
-              Total estimado
-            </span>
-            <span className="text-lg font-bold text-[var(--color-accent)]">
-              {formatCLP(formTotal)}
-            </span>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setShowModal(false)}>
-              Cancelar
-            </Button>
-            <Button
-              icon={modalMode === "edit" ? Save : undefined}
-              onClick={handleSave}
-            >
-              {modalMode === "create" ? "Crear pedido" : "Guardar cambios"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
+        mode={modalMode}
+        pedido={editingPedido || undefined}
+        proveedores={proveedores}
+        productos={productos}
+        sucursales={branches}
+        onSave={handleSave}
+        onCreateProveedor={handleCreateProveedor}
+      />
 
       {/* Modal: WhatsApp text */}
       <Modal
@@ -670,7 +461,7 @@ export default function PedidosPage() {
               readOnly
               value={generateWhatsAppText(selectedPedido)}
               rows={12}
-              className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-alt)] px-4 py-3 text-sm text-[var(--color-text)] font-mono resize-none"
+              className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-alt)] px-4 py-3 text-sm text-[var(--color-text)] font-mono"
             />
             <div className="flex justify-end">
               <Button

@@ -16,6 +16,7 @@ import {
   Wallet,
   Heart,
   Receipt,
+  Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useThemeStore, type AvatarId } from "@/store/theme-store";
@@ -65,6 +66,7 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { href: "/pedidos", label: "Pedidos a proveedores", icon: Package },
       { href: "/pedidos/items", label: "Items", icon: ListOrdered },
+      { href: "/pedidos/sucursales", label: "Por sucursal", icon: Building2 },
     ],
   },
   {
@@ -144,7 +146,6 @@ export function IslandSidebar() {
             const isHovered = hoveredItem === item.id;
 
             if (item.href) {
-              // Simple link
               return (
                 <Link
                   key={item.id}
@@ -170,7 +171,6 @@ export function IslandSidebar() {
               );
             }
 
-            // Item with children
             return (
               <div
                 key={item.id}
@@ -196,7 +196,6 @@ export function IslandSidebar() {
                   </span>
                 </div>
 
-                {/* Sub-items — shown when sidebar is hovered AND this item is hovered/active */}
                 {sidebarHovered && (isHovered || active) && item.children && (
                   <div className="ml-5 mt-0.5 space-y-0.5 border-l border-[var(--color-border)] pl-3">
                     {item.children.map((child) => (
@@ -236,9 +235,7 @@ export function IslandSidebar() {
             <p className="text-sm font-medium text-[var(--color-text)] truncate">
               {userProfile.name}
             </p>
-            <p className="text-[10px] text-[var(--color-muted)]">
-              Admin
-            </p>
+            <p className="text-[10px] text-[var(--color-muted)]">Admin</p>
           </div>
         </div>
       </div>

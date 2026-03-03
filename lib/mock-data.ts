@@ -14,9 +14,9 @@ import type {
    ========================================================== */
 
 export const sucursales: Sucursal[] = [
-  { id: "s1", nombre: "Casa Matriz", direccion: "Av. Principal 1234", telefono: "+56 9 1234 5678" },
-  { id: "s2", nombre: "Sucursal Centro", direccion: "Calle Comercio 567", telefono: "+56 9 2345 6789" },
-  { id: "s3", nombre: "Sucursal Norte", direccion: "Av. Norte 890", telefono: "+56 9 3456 7890" },
+  { id: "s1", nombre: "Casa Matriz", direccion: "Av. Principal 1234", telefono: "+56 9 1234 5678", color: "#f4a7bb" },
+  { id: "s2", nombre: "Sucursal Centro", direccion: "Calle Comercio 567", telefono: "+56 9 2345 6789", color: "#98d4bb" },
+  { id: "s3", nombre: "Sucursal Norte", direccion: "Av. Norte 890", telefono: "+56 9 3456 7890", color: "#c3a6d8" },
 ];
 
 export const proveedores: Proveedor[] = [
